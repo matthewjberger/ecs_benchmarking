@@ -8,7 +8,7 @@ repository = "https://github.com/matthewjberger/ecs_benchmarking"
 publish = false
 
 [dependencies]
-freecs = "3"
+freecs = { version = "3", features = ["dynamic"] }
 bevy_ecs = "0.19"
 bevy_tasks = "0.19"
 sky_ecs = "0.1"
