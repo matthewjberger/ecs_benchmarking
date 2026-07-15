@@ -45,3 +45,25 @@ impl Benchmark {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn processes_all_fragmented_archetypes() {
+        let mut bench = Benchmark::setup();
+        assert_eq!(bench.0.entity_count(), 520);
+
+        bench.run();
+
+        let mut count = 0;
+        let mut last = 0.0;
+        bench.0.query::<&Data>().for_each(|_entity, data| {
+            count += 1;
+            last = data.0;
+        });
+        assert_eq!(count, 520);
+        assert!((last - 2.0).abs() < 1e-3);
+    }
+}

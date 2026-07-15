@@ -53,3 +53,27 @@ impl Benchmark {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bulk_spawn_creates_all_entities() {
+        let mut world = DynWorld::new();
+        world.spawn_bundles(
+            (
+                Transform(Matrix4::from_scale(1.0)),
+                Position(Vector3::unit_x()),
+                Rotation(Vector3::unit_x()),
+                Velocity(Vector3::unit_x()),
+            ),
+            10_000,
+        );
+        assert_eq!(world.entity_count(), 10_000);
+
+        let mut count = 0;
+        world.query::<&Position>().for_each(|_entity, _| count += 1);
+        assert_eq!(count, 10_000);
+    }
+}

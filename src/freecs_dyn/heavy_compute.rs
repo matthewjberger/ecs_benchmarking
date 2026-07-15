@@ -62,3 +62,23 @@ impl Benchmark {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn processes_all_entities_in_parallel() {
+        let mut bench = Benchmark::setup();
+        assert_eq!(bench.0.entity_count(), 1000);
+
+        bench.run();
+
+        let mut count = 0;
+        bench
+            .0
+            .query::<&Position>()
+            .for_each(|_entity, _| count += 1);
+        assert_eq!(count, 1000);
+    }
+}

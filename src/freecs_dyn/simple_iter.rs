@@ -59,3 +59,25 @@ impl Benchmark {
             });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iterates_all_entities_and_mutates() {
+        let mut bench = Benchmark::setup();
+        assert_eq!(bench.0.entity_count(), 10_000);
+
+        bench.run();
+
+        let mut count = 0;
+        let mut sample_x = 0.0;
+        bench.0.query::<&Position>().for_each(|_entity, position| {
+            count += 1;
+            sample_x = position.0.x;
+        });
+        assert_eq!(count, 10_000);
+        assert!((sample_x - 2.0).abs() < 1e-3);
+    }
+}

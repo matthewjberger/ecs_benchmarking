@@ -54,3 +54,23 @@ impl Benchmark {
         self.1.run(&mut self.0);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schedule_covers_all_archetypes() {
+        let mut bench = Benchmark::setup();
+        assert_eq!(bench.0.entity_count(), 40_000);
+
+        let mut ab = 0;
+        bench.0.query::<(&A, &B)>().for_each(|_entity, _| ab += 1);
+        assert_eq!(ab, 40_000);
+        let mut cd = 0;
+        bench.0.query::<(&C, &D)>().for_each(|_entity, _| cd += 1);
+        assert_eq!(cd, 10_000);
+
+        bench.run();
+    }
+}
