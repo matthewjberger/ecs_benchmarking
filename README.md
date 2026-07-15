@@ -28,15 +28,18 @@ measures.
 | `simple_insert` | Spawning 10,000 entities that each carry four components. Measures raw archetype allocation and bulk insertion. |
 | `simple_iter` | Iterating 10,000 entities and folding velocity into position. Measures dense, cache-friendly read/write iteration. |
 | `fragmented_iter` | Iterating one shared component spread across 26 distinct archetypes. Measures how well each library tolerates archetype fragmentation. |
-| `heavy_compute` | Inverting a matrix 100 times per entity over 1,000 entities, in parallel. Measures parallel iteration and per-entity compute throughput. |
+| `heavy_compute` | Inverting a matrix 100 times per entity over 1,000 entities, in parallel. Compute-bound, not a storage test (see Methodology). |
 | `add_remove` | Adding then removing a component on 10,000 entities. Measures the cost of structural change and archetype migration. |
-| `schedule` | Running three systems over four overlapping archetypes (40,000 entities). Measures system dispatch and query setup overhead. |
+| `schedule` | Running three systems over four overlapping archetypes (40,000 entities). Compares each library's own scheduler, which are not the same machine (see Methodology). |
 
 Each library is used the way it is meant to be used, so the comparison reflects idiomatic
 code rather than a lowest-common-denominator port. `freecs` uses its `ecs!` macro,
 closure-based queries, and `par_for_each_mut`; `bevy_ecs` uses `spawn_batch`,
 `World::query`, `par_iter_mut`, and a `Schedule`; `sky_ecs` uses its typed `query_mut`,
-`ParView` systems, and staged `tick`.
+`ParView` systems, and staged `tick`. Because the APIs differ, this measures idiomatic
+usage of each library, not identical instruction sequences. Read the
+[Methodology](#methodology-fairness-and-what-the-numbers-do-and-dont-say) section before
+drawing conclusions: two of the six scenarios are deliberately not apples-to-apples.
 
 ## Running it
 
@@ -100,20 +103,93 @@ implementations:
 The report picks the new column up on the next run and slots it in after the known
 libraries, so nothing else needs editing.
 
-## Methodology and caveats
+## Methodology, fairness, and what the numbers do (and don't) say
 
-- Times are Criterion's mean estimate of a single `run()` call. Lower is better; the
-  speedup column is the next-fastest time divided by the winner's time.
-- Microbenchmarks measure exactly what they measure and nothing more. A win here does not
-  translate linearly to a win in a real game loop, where memory layout, system count, and
-  contention all shift the picture. Treat these as directional signals, not a scoreboard.
-- Parallel scenarios depend on core count and thread-pool warmup, so they vary the most
-  between machines.
-- Build with a warm cache and a quiet machine. The release profile in `Cargo.toml` uses
-  thin LTO and a single codegen unit so every library is measured with optimizations a
-  shipping build would actually use.
-- The compared versions are pinned in `Cargo.toml`. Bump them there to benchmark against
-  newer releases.
+Read this before quoting any result. Microbenchmarks are easy to misread, and two of the
+six scenarios compare things that are not the same underneath.
+
+### What is and isn't timed
+
+Criterion times only `run()`. Each library's `setup()` (building the world, spawning
+fixtures, registering systems) runs once and is excluded, with one deliberate exception:
+
+- **`simple_insert`** builds a fresh `World` and fills it inside `run()`, because creating
+  and populating a world is the thing being measured. So this scenario includes the cost of
+  `World::new()` on every iteration. That is consistent across all three libraries and
+  matches the upstream suite, but it means `simple_insert` is "world creation plus 10K
+  inserts," not inserts in isolation.
+- Every other scenario builds the world once in `setup()` and times only the operation
+  under test.
+
+### The same work through different APIs
+
+Each scenario does the same logical work with the same component layout, but through each
+library's idiomatic API. Where an operation has several forms (for example a deferred
+command buffer versus direct mutation), all three use the same form so they line up:
+`add_remove` uses direct structural changes on every library, not command buffers. The
+result is a comparison of idiomatic usage, not of identical machine code.
+
+### Two scenarios are not apples-to-apples
+
+- **`schedule`** compares each library's default scheduler, and those are architecturally
+  different amounts of work. freecs runs a bare serial `for` loop over three closures, with
+  no access analysis and no deferred structural changes. bevy_ecs runs its executor, which
+  tracks per-system data access, applies deferred command buffers between systems, and
+  carries first-run initialization; with the versions pinned here it runs single-threaded
+  (bevy_ecs's `multi_threaded` feature is off by default), so the cost is executor
+  machinery, not thread coordination. sky_ecs runs its own staged tick. Read this row as
+  "the cost of dispatching three trivial systems the way each library does it out of the
+  box," not as a controlled measurement of dispatch cost. A library that does more per run
+  (safety checks, deferred edits) looks slower here even though that machinery pays off in a
+  real frame with many heavy, interacting systems.
+- **`heavy_compute`** is dominated by the matrix math (100 inversions per entity through
+  cgmath), not by ECS storage, which is why the three land within a few percent of each
+  other. It also runs three different parallel backends (freecs on rayon, bevy on its task
+  pool, sky on its own pool), each with its own warmup and chunking. Read it as "do all
+  three parallelize a compute-heavy loop without falling over," not as a storage benchmark.
+
+The four scenarios that *are* clean like-for-like comparisons are `simple_insert`,
+`simple_iter`, `fragmented_iter`, and `add_remove`.
+
+### Statistics
+
+- The table ranks on Criterion's **mean**. For most rows the mean, median, and confidence
+  interval agree to within about a percent. Some rows can be outlier-skewed on a busy
+  machine (the mean sits above the median when a few samples run slow); when that happens
+  the median is the more honest number. If you want the ranking robust to stray slow
+  samples, switch `read_mean` in `src/bin/report.rs` to read `median.point_estimate`.
+- Numbers come from one machine, one run, warm cache. Run it yourself, and treat any gap
+  under roughly 10 percent as noise rather than a ranking.
+
+### Scale
+
+Entity counts here (1K to 40K) fit comfortably in cache, so these measure per-operation
+overhead and iteration tightness, not memory-bandwidth behavior at millions of entities. A
+library that wins at 10K can lose at 10M, and the reverse. If you care about a specific
+scale, change the counts in the scenario modules and re-run.
+
+### Results are not checksummed
+
+Following the upstream suite, `run()` performs the work but does not verify the output. In
+practice the mutations go through non-inlined library calls into heap storage, which stops
+the optimizer from deleting them, so the numbers reflect real work. If you extend the suite
+and see an implausibly fast result, wrap an aggregate of the output in `black_box` to rule
+out dead-code elimination before trusting it.
+
+### Component payloads
+
+Component fields are written on spawn and relocated by the ECS but never read back through a
+field accessor, so the compiler reports them as never-read. That is expected: they are
+realistic payload the storage has to carry and move between archetypes. The `bevy` and `sky`
+modules carry a scoped `#![allow(dead_code)]` for exactly this reason; the freecs components
+expose public fields and so do not trip the lint.
+
+### Build settings and versions
+
+The release profile in `Cargo.toml` uses thin LTO and a single codegen unit, so every
+library is measured with the kind of optimization a shipping build would actually use. The
+compared versions are pinned in `Cargo.toml`; bump them there to benchmark against newer
+releases.
 
 ## License
 
