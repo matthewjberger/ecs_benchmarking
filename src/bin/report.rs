@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,6 +19,10 @@ const SCENARIOS: &[(&str, &str)] = &[
     ("schedule", "Run a 3-system schedule over 40K entities"),
 ];
 
+// Columns are laid out in this order when present; any other discovered
+// library is appended alphabetically. Adding a library needs no change here.
+const PREFERRED_ORDER: &[&str] = &["freecs", "bevy", "skyecs"];
+
 #[derive(Deserialize)]
 struct Estimate {
     point_estimate: f64,
@@ -30,24 +35,75 @@ struct Estimates {
 
 struct Row {
     description: &'static str,
-    freecs_ns: Option<f64>,
-    bevy_ns: Option<f64>,
+    values: BTreeMap<String, f64>,
+}
+
+impl Row {
+    fn cell(&self, library: &str) -> String {
+        self.values
+            .get(library)
+            .map(|nanos| format_time(*nanos))
+            .unwrap_or_else(|| "-".into())
+    }
+
+    fn fastest(&self) -> Option<&String> {
+        self.values
+            .iter()
+            .min_by(|left, right| left.1.total_cmp(right.1))
+            .map(|(library, _)| library)
+    }
+
+    fn speedup_over_next(&self) -> Option<f64> {
+        let mut times: Vec<f64> = self.values.values().copied().collect();
+        if times.len() < 2 {
+            return None;
+        }
+        times.sort_by(|left, right| left.total_cmp(right));
+        Some(times[1] / times[0])
+    }
 }
 
 fn criterion_home() -> String {
     std::env::var("CRITERION_HOME").unwrap_or_else(|_| "target/criterion".to_string())
 }
 
-fn read_mean(group: &str, function: &str) -> Option<f64> {
-    let path = format!(
-        "{}/{}/{}/new/estimates.json",
-        criterion_home(),
-        group,
-        function
-    );
+fn read_mean(path: &str) -> Option<f64> {
     let text = fs::read_to_string(path).ok()?;
     let estimates: Estimates = serde_json::from_str(&text).ok()?;
     Some(estimates.mean.point_estimate)
+}
+
+fn discover(group: &str) -> BTreeMap<String, f64> {
+    let dir = format!("{}/{}", criterion_home(), group);
+    let mut results = BTreeMap::new();
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return results;
+    };
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let library = entry.file_name().to_string_lossy().to_string();
+        let estimates = format!("{dir}/{library}/new/estimates.json");
+        if let Some(nanos) = read_mean(&estimates) {
+            results.insert(library, nanos);
+        }
+    }
+    results
+}
+
+fn order_libraries(all: &BTreeSet<String>) -> Vec<String> {
+    let mut ordered: Vec<String> = PREFERRED_ORDER
+        .iter()
+        .filter(|library| all.contains(**library))
+        .map(|library| library.to_string())
+        .collect();
+    for library in all {
+        if !ordered.contains(library) {
+            ordered.push(library.clone());
+        }
+    }
+    ordered
 }
 
 fn format_time(nanos: f64) -> String {
@@ -83,19 +139,6 @@ fn utc_timestamp(secs: u64) -> String {
     format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02} UTC")
 }
 
-fn winner(row: &Row) -> Option<(&'static str, f64)> {
-    match (row.freecs_ns, row.bevy_ns) {
-        (Some(freecs), Some(bevy)) => {
-            if freecs <= bevy {
-                Some(("freecs", bevy / freecs))
-            } else {
-                Some(("bevy", freecs / bevy))
-            }
-        }
-        _ => None,
-    }
-}
-
 fn pad(text: &str, width: usize) -> String {
     let mut out = text.to_string();
     while out.chars().count() < width {
@@ -104,7 +147,7 @@ fn pad(text: &str, width: usize) -> String {
     out
 }
 
-fn print_terminal_table(rows: &[Row]) {
+fn print_terminal_table(order: &[String], rows: &[Row]) {
     const RESET: &str = "\x1b[0m";
     const BOLD: &str = "\x1b[1m";
     const DIM: &str = "\x1b[2m";
@@ -114,86 +157,103 @@ fn print_terminal_table(rows: &[Row]) {
     let scenario_width = rows
         .iter()
         .map(|row| row.description.chars().count())
+        .chain(std::iter::once("Scenario".len()))
         .max()
-        .unwrap_or(20)
-        .max("Scenario".len());
-    let col = 12;
+        .unwrap_or(20);
 
-    let header = format!(
-        "  {}  {}  {}  {}  {}",
-        pad("Scenario", scenario_width),
-        pad("freecs", col),
-        pad("bevy", col),
-        pad("winner", 8),
-        "speedup",
-    );
-    println!();
-    println!("{BOLD}{CYAN}  freecs vs bevy_ecs{RESET}");
+    let mut widths: Vec<usize> = order.iter().map(|library| library.len().max(10)).collect();
+    for row in rows {
+        for (index, library) in order.iter().enumerate() {
+            widths[index] = widths[index].max(row.cell(library).chars().count());
+        }
+    }
+    let fastest_width = order
+        .iter()
+        .map(|library| library.len())
+        .max()
+        .unwrap_or(7)
+        .max(7);
+
+    print!("\n{BOLD}{CYAN}  ");
+    print!("{}", order.join(" vs "));
+    println!("{RESET}");
+
+    let mut header = format!("  {}", pad("Scenario", scenario_width));
+    for (index, library) in order.iter().enumerate() {
+        header.push_str(&format!("  {}", pad(library, widths[index])));
+    }
+    header.push_str(&format!("  {}  speedup", pad("fastest", fastest_width)));
     println!("{DIM}{header}{RESET}");
-    println!("  {}", "-".repeat(scenario_width + col * 2 + 8 + 10 + 8));
+
+    let total: usize =
+        scenario_width + widths.iter().map(|width| width + 2).sum::<usize>() + fastest_width + 13;
+    println!("  {}", "-".repeat(total));
 
     for row in rows {
-        let freecs = row.freecs_ns.map(format_time).unwrap_or_else(|| "-".into());
-        let bevy = row.bevy_ns.map(format_time).unwrap_or_else(|| "-".into());
-        match winner(row) {
-            Some((who, ratio)) => {
-                let freecs_cell = if who == "freecs" {
-                    format!("{GREEN}{}{RESET}", pad(&freecs, col))
-                } else {
-                    pad(&freecs, col)
-                };
-                let bevy_cell = if who == "bevy" {
-                    format!("{GREEN}{}{RESET}", pad(&bevy, col))
-                } else {
-                    pad(&bevy, col)
-                };
-                println!(
-                    "  {}  {}  {}  {}{}{}  {:.2}x",
-                    pad(row.description, scenario_width),
-                    freecs_cell,
-                    bevy_cell,
-                    GREEN,
-                    pad(who, 8),
-                    RESET,
-                    ratio,
-                );
-            }
-            None => {
-                println!(
-                    "  {}  {}  {}  {}  -",
-                    pad(row.description, scenario_width),
-                    pad(&freecs, col),
-                    pad(&bevy, col),
-                    pad("-", 8),
-                );
+        let fastest = row.fastest();
+        let mut line = format!("  {}", pad(row.description, scenario_width));
+        for (index, library) in order.iter().enumerate() {
+            let cell = pad(&row.cell(library), widths[index]);
+            if Some(library) == fastest {
+                line.push_str(&format!("  {GREEN}{cell}{RESET}"));
+            } else {
+                line.push_str(&format!("  {cell}"));
             }
         }
+        match (fastest, row.speedup_over_next()) {
+            (Some(library), Some(ratio)) => {
+                line.push_str(&format!(
+                    "  {GREEN}{}{RESET}  {ratio:.2}x",
+                    pad(library, fastest_width)
+                ));
+            }
+            (Some(library), None) => {
+                line.push_str(&format!(
+                    "  {GREEN}{}{RESET}  -",
+                    pad(library, fastest_width)
+                ));
+            }
+            _ => {
+                line.push_str(&format!("  {}  -", pad("-", fastest_width)));
+            }
+        }
+        println!("{line}");
     }
     println!();
 }
 
-fn markdown_report(rows: &[Row], timestamp: &str) -> String {
+fn markdown_report(order: &[String], rows: &[Row], timestamp: &str) -> String {
     let mut out = String::new();
-    out.push_str("# freecs vs bevy_ecs\n\n");
+    out.push_str("# ECS benchmark comparison\n\n");
     out.push_str(&format!("_Generated {timestamp}._\n\n"));
     out.push_str(
-        "Times are Criterion mean estimates (lower is better). \
-         Speedup is the ratio between the two implementations for that scenario.\n\n",
+        "Times are Criterion mean estimates (lower is better). Speedup is how much \
+         faster the winner is than the next-fastest implementation.\n\n",
     );
-    out.push_str("| Scenario | freecs | bevy_ecs | Winner | Speedup |\n");
-    out.push_str("| --- | ---: | ---: | :---: | ---: |\n");
+
+    out.push_str("| Scenario |");
+    for library in order {
+        out.push_str(&format!(" {library} |"));
+    }
+    out.push_str(" Fastest | Speedup |\n");
+
+    out.push_str("| --- |");
+    for _ in order {
+        out.push_str(" ---: |");
+    }
+    out.push_str(" :---: | ---: |\n");
 
     for row in rows {
-        let freecs = row.freecs_ns.map(format_time).unwrap_or_else(|| "-".into());
-        let bevy = row.bevy_ns.map(format_time).unwrap_or_else(|| "-".into());
-        let (winner_cell, speedup_cell) = match winner(row) {
-            Some((who, ratio)) => (who.to_string(), format!("{ratio:.2}x")),
-            None => ("-".to_string(), "-".to_string()),
-        };
-        out.push_str(&format!(
-            "| {} | {} | {} | {} | {} |\n",
-            row.description, freecs, bevy, winner_cell, speedup_cell
-        ));
+        out.push_str(&format!("| {} |", row.description));
+        for library in order {
+            out.push_str(&format!(" {} |", row.cell(library)));
+        }
+        let fastest = row.fastest().map(String::as_str).unwrap_or("-");
+        let speedup = row
+            .speedup_over_next()
+            .map(|ratio| format!("{ratio:.2}x"))
+            .unwrap_or_else(|| "-".into());
+        out.push_str(&format!(" {fastest} | {speedup} |\n"));
     }
 
     out.push_str("\n## Scenario definitions\n\n");
@@ -213,33 +273,37 @@ fn main() {
         std::process::exit(1);
     }
 
+    let mut all_libraries: BTreeSet<String> = BTreeSet::new();
     let rows: Vec<Row> = SCENARIOS
         .iter()
-        .map(|(id, description)| Row {
-            description,
-            freecs_ns: read_mean(id, "freecs"),
-            bevy_ns: read_mean(id, "bevy"),
+        .map(|(id, description)| {
+            let values = discover(id);
+            for library in values.keys() {
+                all_libraries.insert(library.clone());
+            }
+            Row {
+                description,
+                values,
+            }
         })
         .collect();
 
-    if rows
-        .iter()
-        .all(|row| row.freecs_ns.is_none() && row.bevy_ns.is_none())
-    {
+    if all_libraries.is_empty() {
         eprintln!(
             "Criterion results exist but no matching scenarios were found. Run `just bench`."
         );
         std::process::exit(1);
     }
 
-    print_terminal_table(&rows);
+    let order = order_libraries(&all_libraries);
+    print_terminal_table(&order, &rows);
 
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
     let timestamp = utc_timestamp(secs);
-    let markdown = markdown_report(&rows, &timestamp);
+    let markdown = markdown_report(&order, &rows, &timestamp);
 
     if let Err(error) = fs::create_dir_all("reports") {
         eprintln!("Failed to create reports directory: {error}");

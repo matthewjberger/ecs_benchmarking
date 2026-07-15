@@ -1,17 +1,24 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use ecs_benchmarking::{bevy, freecs_impl};
+use ecs_benchmarking::{bevy, freecs_impl, sky};
 
+macro_rules! run_impl {
+    ($group:expr, $module:ident, $lib:ident, $label:literal) => {
+        $group.bench_function($label, |bencher| {
+            let mut bench = $lib::$module::Benchmark::setup();
+            bencher.iter(move || bench.run());
+        });
+    };
+}
+
+// To add another ECS library: create `src/<lib>/<scenario>.rs` modules that
+// expose `Benchmark::setup()` / `run()`, import the module below, and add one
+// `run_impl!` line per library here. The report auto-discovers every column.
 macro_rules! scenario {
     ($criterion:expr, $group:literal, $module:ident) => {{
         let mut group = $criterion.benchmark_group($group);
-        group.bench_function("freecs", |bencher| {
-            let mut bench = freecs_impl::$module::Benchmark::setup();
-            bencher.iter(move || bench.run());
-        });
-        group.bench_function("bevy", |bencher| {
-            let mut bench = bevy::$module::Benchmark::setup();
-            bencher.iter(move || bench.run());
-        });
+        run_impl!(group, $module, freecs_impl, "freecs");
+        run_impl!(group, $module, bevy, "bevy");
+        run_impl!(group, $module, sky, "skyecs");
         group.finish();
     }};
 }
