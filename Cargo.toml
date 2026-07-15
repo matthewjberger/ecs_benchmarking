@@ -23,6 +23,10 @@ criterion = { version = "0.7", features = ["html_reports"] }
 name = "benchmarks"
 harness = false
 
+[[bench]]
+name = "experiment_iter"
+harness = false
+
 [[bin]]
 name = "report"
 path = "src/bin/report.rs"

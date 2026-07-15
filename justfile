@@ -21,6 +21,10 @@ bench-one scenario:
 report:
     cargo run --release --quiet --bin report
 
+# Run the iteration-API experiment (freecs index vs raw slices vs sky_ecs)
+experiment:
+    cargo bench --bench experiment_iter
+
 # cargo check plus a format check
 check:
     cargo check --all-targets

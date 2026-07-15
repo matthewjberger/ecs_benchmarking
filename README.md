@@ -129,6 +129,27 @@ command buffer versus direct mutation), all three use the same form so they line
 `add_remove` uses direct structural changes on every library, not command buffers. The
 result is a comparison of idiomatic usage, not of identical machine code.
 
+### Iteration API overhead is real and measurable
+
+freecs's ergonomic query hands the closure `(entity, &mut table, index)`, so you write
+`table.position[index]`, a bounds-checked index on every access. sky_ecs hands the closure
+direct references. On `simple_iter` that shows up as a gap, but the gap is the convenience
+API, not the storage layout. freecs also exposes its columns as plain public `Vec`s, so a
+hot loop can iterate the raw slices instead. The `experiment_iter` bench (`just experiment`)
+measures all three over the identical component layout:
+
+| Iteration path | Time (10K entities) |
+| --- | --- |
+| freecs, ergonomic `table.position[idx]` | ~8.0 us |
+| freecs, raw `world.tables` column slices | ~5.0 us |
+| sky_ecs, `query_mut` references | ~5.1 us |
+
+Iterating freecs's raw column slices ties sky_ecs; the whole ~1.6x gap on `simple_iter` was
+bounds-checked indexing in the convenience API, not the underlying storage. The suite's
+`simple_iter` row uses the ergonomic API on every library, because that is how people
+normally write each one, but the storage layouts are effectively equal for dense iteration.
+The experiment checksums each pass, so the numbers are verified to do the work.
+
 ### Two scenarios are not apples-to-apples
 
 - **`schedule`** compares each library's default scheduler, and those are architecturally
