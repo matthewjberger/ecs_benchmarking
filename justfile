@@ -25,6 +25,10 @@ report:
 experiment:
     cargo bench --bench experiment_iter
 
+# Run the single-archetype parallel experiment (intra-archetype scaling)
+experiment-parallel:
+    cargo bench --bench experiment_parallel
+
 # cargo check plus a format check
 check:
     cargo check --all-targets

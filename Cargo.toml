@@ -27,6 +27,10 @@ harness = false
 name = "experiment_iter"
 harness = false
 
+[[bench]]
+name = "experiment_parallel"
+harness = false
+
 [[bin]]
 name = "report"
 path = "src/bin/report.rs"
