@@ -7,6 +7,14 @@ description = "Head-to-head Criterion benchmarks comparing freecs against bevy_e
 repository = "https://github.com/matthewjberger/ecs_benchmarking"
 publish = false
 
+# Enable to build the freecs_dyn column against freecs's contiguous raw
+# storage backend instead of the default safe one, to compare the two:
+#   cargo bench --bench benchmarks                     # freecs_dyn = safe storage
+#   cargo bench --bench benchmarks --features raw_storage   # freecs_dyn = raw storage
+# (needs a freecs that ships the raw_storage feature, e.g. 4.0 or a local patch.)
+[features]
+raw_storage = ["freecs/raw_storage"]
+
 [dependencies]
 freecs = { version = "3", features = ["dynamic"] }
 bevy_ecs = "0.19"
