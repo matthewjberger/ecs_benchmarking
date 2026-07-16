@@ -7,17 +7,17 @@ description = "Head-to-head Criterion benchmarks comparing freecs against bevy_e
 repository = "https://github.com/matthewjberger/ecs_benchmarking"
 publish = false
 
-# To compare freecs's default (safe) column storage against its opt-in
-# contiguous `raw_storage` backend, point the freecs dependency below at a
-# checkout that ships the feature (freecs 4.0+ or a local patch) and add the
-# feature to the enabled list, then run the `freecs_dyn` benchmarks each way:
-#   freecs = { version = "4", features = ["dynamic"] }               # safe storage
-#   freecs = { version = "4", features = ["dynamic", "raw_storage"] } # raw storage
-#   cargo bench --bench benchmarks -- freecs_dyn
+# Compare freecs's default (safe) column storage against its opt-in contiguous
+# `raw_storage` backend on the freecs_dyn column:
+#   cargo bench --bench benchmarks -- freecs_dyn                    # safe storage
+#   cargo bench --bench benchmarks --features raw_storage -- freecs_dyn  # raw storage
 # The freecs_dyn correctness tests pass identically under both, so any timing
 # difference is pure storage-backend cost.
+[features]
+raw_storage = ["freecs/raw_storage"]
+
 [dependencies]
-freecs = { version = "3", features = ["dynamic"] }
+freecs = { version = "4.1", features = ["dynamic"] }
 bevy_ecs = "0.19"
 bevy_tasks = "0.19"
 sky_ecs = "0.1"
