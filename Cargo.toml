@@ -19,7 +19,7 @@ publish = false
 raw_storage = ["freecs/raw_storage"]
 
 [dependencies]
-freecs = { version = "4.9.1", features = ["dynamic"] }
+freecs = { version = "4.9.2", features = ["dynamic"] }
 bevy_ecs = "0.19"
 bevy_tasks = "0.19"
 sky_ecs = "0.1"

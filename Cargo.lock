@@ -554,9 +554,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "freecs"
-version = "4.9.1"
+version = "4.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "013da4ca0ba3d5c2a37ceae47b60c5169ff3b448abeb112b22f28727987c4b43"
+checksum = "5403e8bc584d5a0e9f5e74556f8d81046adf346d723b6b1aecec0391273f6170"
 dependencies = [
  "pastey",
  "rayon",
