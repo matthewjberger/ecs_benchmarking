@@ -21,7 +21,7 @@ const SCENARIOS: &[(&str, &str)] = &[
 
 // Columns are laid out in this order when present; any other discovered
 // library is appended alphabetically. Adding a library needs no change here.
-const PREFERRED_ORDER: &[&str] = &["freecs", "freecs_dyn", "bevy", "skyecs"];
+const PREFERRED_ORDER: &[&str] = &["freecs", "bevy", "skyecs"];
 
 #[derive(Deserialize)]
 struct Estimate {

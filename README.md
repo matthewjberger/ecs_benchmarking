@@ -33,11 +33,11 @@ measures.
 | `schedule` | Running three systems over four overlapping archetypes (40,000 entities). Compares each library's own scheduler, which are not the same machine (see Methodology). |
 
 Each library is used the way it is meant to be used, so the comparison reflects idiomatic
-code rather than a lowest-common-denominator port. `freecs` uses its `ecs!` macro,
-closure-based queries, and `par_for_each_mut`; `bevy_ecs` uses `spawn_batch`,
-`World::query`, `par_iter_mut`, and a `Schedule`; `sky_ecs` uses its typed `query_mut`,
-`ParView` systems, and staged `tick`. Because the APIs differ, this measures idiomatic
-usage of each library, not identical instruction sequences. Read the
+code rather than a lowest-common-denominator port. `freecs` uses its dynamic world
+(`DynWorld`), typed reference queries, `spawn_bundles`, and `par_for_each`; `bevy_ecs` uses
+`spawn_batch`, `World::query`, `par_iter_mut`, and a `Schedule`; `sky_ecs` uses its typed
+`query_mut`, `ParView` systems, and staged `tick`. Because the APIs differ, this measures
+idiomatic usage of each library, not identical instruction sequences. Read the
 [Methodology](#methodology-fairness-and-what-the-numbers-do-and-dont-say) section before
 drawing conclusions: two of the six scenarios are deliberately not apples-to-apples.
 
@@ -129,26 +129,21 @@ command buffer versus direct mutation), all three use the same form so they line
 `add_remove` uses direct structural changes on every library, not command buffers. The
 result is a comparison of idiomatic usage, not of identical machine code.
 
-### Iteration API overhead is real and measurable
+### freecs is measured through its dynamic world
 
-freecs's ergonomic query hands the closure `(entity, &mut table, index)`, so you write
-`table.position[index]`, a bounds-checked index on every access. sky_ecs hands the closure
-direct references. On `simple_iter` that shows up as a gap, but the gap is the convenience
-API, not the storage layout. freecs also exposes its columns as plain public `Vec`s, so a
-hot loop can iterate the raw slices instead. The `experiment_iter` bench (`just experiment`)
-measures all three over the identical component layout:
+The `freecs` column is `freecs::dynamic::DynWorld`: components registered at runtime,
+queried as typed references (`query::<(&mut Position, &Velocity)>()`). freecs also ships a
+static `ecs!` macro tier over the same storage, which this suite does not measure.
 
-| Iteration path | Time (10K entities) |
-| --- | --- |
-| freecs, ergonomic `table.position[idx]` | ~8.0 us |
-| freecs, raw `world.tables` column slices | ~5.0 us |
-| sky_ecs, `query_mut` references | ~5.1 us |
+Two freecs settings are off by default and stay off here, because sky_ecs and bevy_ecs are
+not paying for them either: per-row change detection (`set_change_detection`) and the
+structural-change log (`structural_logging`). A world that turns them on pays two extra
+`u32` columns per component, a tick stamp per row on every mutable query, and a log entry
+per entity per structural change. Turn them on and these numbers get worse; that is the
+feature working, not the storage.
 
-Iterating freecs's raw column slices ties sky_ecs; the whole ~1.6x gap on `simple_iter` was
-bounds-checked indexing in the convenience API, not the underlying storage. The suite's
-`simple_iter` row uses the ergonomic API on every library, because that is how people
-normally write each one, but the storage layouts are effectively equal for dense iteration.
-The experiment checksums each pass, so the numbers are verified to do the work.
+freecs's opt-in `raw_storage` backend is measured separately (see below), not in the table
+above.
 
 ### Two scenarios are not apples-to-apples
 
@@ -158,7 +153,10 @@ The experiment checksums each pass, so the numbers are verified to do the work.
   tracks per-system data access, applies deferred command buffers between systems, and
   carries first-run initialization; with the versions pinned here it runs single-threaded
   (bevy_ecs's `multi_threaded` feature is off by default), so the cost is executor
-  machinery, not thread coordination. sky_ecs runs its own staged tick. Read this row as
+  machinery, not thread coordination. sky_ecs runs its own staged tick, which compiles the
+  three systems into conflict-free waves once and then dispatches them; its `cd` and `ce`
+  systems both write `C`, so they land in different waves and it runs this row serially
+  rather than across threads. Read this row as
   "the cost of dispatching three trivial systems the way each library does it out of the
   box," not as a controlled measurement of dispatch cost. A library that does more per run
   (safety checks, deferred edits) looks slower here even though that machinery pays off in a
@@ -201,9 +199,8 @@ out dead-code elimination before trusting it.
 
 Component fields are written on spawn and relocated by the ECS but never read back through a
 field accessor, so the compiler reports them as never-read. That is expected: they are
-realistic payload the storage has to carry and move between archetypes. The `bevy` and `sky`
-modules carry a scoped `#![allow(dead_code)]` for exactly this reason; the freecs components
-expose public fields and so do not trip the lint.
+realistic payload the storage has to carry and move between archetypes. Every implementation
+module carries a scoped `#![allow(dead_code)]` for exactly this reason.
 
 ### Build settings and versions
 

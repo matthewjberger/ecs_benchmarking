@@ -21,10 +21,6 @@ bench-one scenario:
 report:
     cargo run --release --quiet --bin report
 
-# Run the iteration-API experiment (freecs index vs raw slices vs sky_ecs)
-experiment:
-    cargo bench --bench experiment_iter
-
 # Run the single-archetype parallel experiment (intra-archetype scaling)
 experiment-parallel:
     cargo bench --bench experiment_parallel

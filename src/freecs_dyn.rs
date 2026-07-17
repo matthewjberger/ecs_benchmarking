@@ -1,6 +1,6 @@
-// The dynamic tier (freecs::dynamic::DynWorld) with runtime-registered
-// components, typed reference queries, and staged systems. This is the tier
-// Nightshade actually runs on, so it is the one worth measuring.
+// freecs through `freecs::dynamic::DynWorld`: runtime-registered components,
+// typed reference queries, and staged systems. This is the tier Nightshade
+// runs on, so it is the one the `freecs` column measures.
 //
 // Component fields are payload the ECS stores and moves; they are written on
 // spawn and exercised through storage rather than read via field access.
