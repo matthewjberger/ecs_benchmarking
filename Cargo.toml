@@ -11,8 +11,10 @@ publish = false
 # `raw_storage` backend on the freecs_dyn column:
 #   cargo bench --bench benchmarks -- freecs_dyn                    # safe storage
 #   cargo bench --bench benchmarks --features raw_storage -- freecs_dyn  # raw storage
-# The freecs_dyn correctness tests pass identically under both, so any timing
-# difference is pure storage-backend cost.
+# The freecs_dyn correctness tests pass identically under both, but the timing
+# difference is NOT purely the storage backend: `raw_storage` also swaps the
+# registry's hasher and permanently disables change detection and the
+# structural-change log. It is a bundle of changes, not one.
 [features]
 raw_storage = ["freecs/raw_storage"]
 
