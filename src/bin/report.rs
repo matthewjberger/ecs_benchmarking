@@ -17,6 +17,10 @@ const SCENARIOS: &[(&str, &str)] = &[
     ),
     ("add_remove", "Add then remove a component on 10K entities"),
     ("schedule", "Run a 3-system schedule over 40K entities"),
+    (
+        "wide_iter",
+        "Iterate 8 components over 8M entities (256 MB working set)",
+    ),
 ];
 
 // Columns are laid out in this order when present; any other discovered

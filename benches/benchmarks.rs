@@ -31,6 +31,7 @@ fn benches(criterion: &mut Criterion) {
     scenario!(criterion, "heavy_compute", heavy_compute);
     scenario!(criterion, "add_remove", add_remove);
     scenario!(criterion, "schedule", schedule);
+    scenario!(criterion, "wide_iter", wide_iter);
 }
 
 criterion_group!(benchmarks, benches);

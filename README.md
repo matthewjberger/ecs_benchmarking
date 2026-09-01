@@ -32,6 +32,7 @@ measures.
 | `heavy_compute` | Inverting a matrix 100 times per entity over 1,000 entities, in parallel. Compute-bound, not a storage test (see Methodology). |
 | `add_remove` | Adding then removing a component on 10,000 entities. Measures the cost of structural change and archetype migration. |
 | `schedule` | Running three systems over four overlapping archetypes (40,000 entities). Compares each library's own scheduler, which are not the same machine (see Methodology). |
+| `wide_iter` | Iterating an eight-component query over 8,000,000 entities. The working set is 256 MB, which is larger than any current CPU cache, so this measures storage layout under memory pressure rather than per-operation overhead. |
 
 Each library is used the way it is meant to be used, so the comparison reflects idiomatic
 code rather than a lowest-common-denominator port. `freecs` uses its dynamic world
@@ -42,7 +43,7 @@ components, typed reference queries, `spawn_bundles`, `par_for_each`, and a `Sch
 Because the APIs differ, this measures idiomatic usage of each library, not identical
 instruction sequences. Read the
 [Methodology](#methodology-fairness-and-what-the-numbers-do-and-dont-say) section before
-drawing conclusions: two of the six scenarios are deliberately not apples-to-apples.
+drawing conclusions: two of the seven scenarios are deliberately not apples-to-apples.
 
 ## Running it
 
@@ -222,10 +223,34 @@ The four scenarios that *are* clean like-for-like comparisons are `simple_insert
 
 ### Scale
 
-Entity counts here (1K to 40K) fit comfortably in cache, so these measure per-operation
-overhead and iteration tightness, not memory-bandwidth behavior at millions of entities. A
-library that wins at 10K can lose at 10M, and the reverse. If you care about a specific
-scale, change the counts in the scenario modules and re-run.
+Six of the seven scenarios use 1K to 40K entities, which fit comfortably in cache. They
+measure per-operation overhead and iteration tightness, not memory-bandwidth behavior. A
+library that wins at 10K can lose at 10M, and the reverse.
+
+`wide_iter` is the counterweight. It uses 8,000,000 entities with eight `f32` components
+each, so one pass touches 256 MB of component data. That is larger than any current CPU
+cache, which makes it a test of storage layout rather than of per-call overhead. Note that
+a large cache moves this threshold a long way: on a Ryzen 7 7800X3D the 96 MB of L3 keeps a
+32 MB working set fully resident, so a smaller version of this scenario measures nothing
+useful. Size it against the machine you run it on.
+
+`wide_iter` is listed last on purpose. Its working set evicts everything, so running it
+ahead of the small scenarios would change their times.
+
+### `wide_iter` does not read the entity vector
+
+`freecs` and `nightshade-ecs` hand the entity to the `for_each` closure; `sky_ecs` and
+`bevy_ecs` do not. That asymmetry would be an extra 64 MB stream for two of the four
+columns, which at this scale would be large enough to explain a result on its own.
+
+It does not apply, because the closures ignore the entity and the optimizer removes the
+load. This was confirmed by measurement rather than assumed: forcing the entity to stay
+live, by folding `entity.id` into a checksum passed to `black_box`, moved the
+`nightshade-ecs` column from 6.27 ms to 7.94 ms. The 1.67 ms difference is the cost of that
+64 MB stream, and it is absent from the reported figure. All four columns therefore stream
+the same roughly 288 MB.
+
+If you change this scenario, re-check that property before comparing the columns.
 
 ### Results are not checksummed
 
