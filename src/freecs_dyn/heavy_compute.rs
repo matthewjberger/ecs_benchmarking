@@ -33,6 +33,8 @@ impl Default for Matrix {
     }
 }
 
+freecs::impl_component!(Position, Rotation, Velocity, Matrix);
+
 pub struct Benchmark(DynWorld);
 
 impl Benchmark {

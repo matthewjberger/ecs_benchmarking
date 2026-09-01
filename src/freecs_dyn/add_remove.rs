@@ -7,6 +7,8 @@ struct A(f32);
 #[derive(Clone, Copy, Default)]
 struct B(f32);
 
+freecs::impl_component!(A, B);
+
 pub struct Benchmark(DynWorld, Vec<Entity>);
 
 impl Benchmark {

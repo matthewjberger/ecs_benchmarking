@@ -16,6 +16,8 @@ struct D(f32);
 #[derive(Clone, Copy, Default)]
 struct E(f32);
 
+freecs::impl_component!(A, B, C, D, E);
+
 pub struct Benchmark(DynWorld, Schedule<DynWorld>);
 
 impl Benchmark {

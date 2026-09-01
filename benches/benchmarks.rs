@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use ecs_benchmarking::{bevy, freecs_dyn, sky};
+use ecs_benchmarking::{bevy, freecs_dyn, nightshade, sky};
 
 macro_rules! run_impl {
     ($group:expr, $module:ident, $lib:ident, $label:literal) => {
@@ -19,6 +19,7 @@ macro_rules! scenario {
         run_impl!(group, $module, freecs_dyn, "freecs");
         run_impl!(group, $module, bevy, "bevy");
         run_impl!(group, $module, sky, "skyecs");
+        run_impl!(group, $module, nightshade, "nightshade");
         group.finish();
     }};
 }

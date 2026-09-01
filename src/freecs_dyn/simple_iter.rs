@@ -33,6 +33,8 @@ impl Default for Velocity {
     }
 }
 
+freecs::impl_component!(Transform, Position, Rotation, Velocity);
+
 pub struct Benchmark(DynWorld);
 
 impl Benchmark {

@@ -9,6 +9,7 @@ It currently compares:
 - [freecs](https://crates.io/crates/freecs)
 - [bevy_ecs](https://crates.io/crates/bevy_ecs)
 - [sky_ecs](https://crates.io/crates/sky_ecs)
+- [nightshade-ecs](https://github.com/matthewjberger/nightshade), pinned to a git commit
 
 The scenarios are lifted from the well-known
 [ecs_bench_suite](https://github.com/rust-gamedev/ecs_bench_suite) so the numbers are
@@ -36,8 +37,10 @@ Each library is used the way it is meant to be used, so the comparison reflects 
 code rather than a lowest-common-denominator port. `freecs` uses its dynamic world
 (`DynWorld`), typed reference queries, `spawn_bundles`, and `par_for_each`; `bevy_ecs` uses
 `spawn_batch`, `World::query`, `par_iter_mut`, and a `Schedule`; `sky_ecs` uses its typed
-`query_mut`, `ParView` systems, and staged `tick`. Because the APIs differ, this measures
-idiomatic usage of each library, not identical instruction sequences. Read the
+`query_mut`, `ParView` systems, and staged `tick`; `nightshade-ecs` uses its undeclared
+components, typed reference queries, `spawn_bundles`, `par_for_each`, and a `Schedule`.
+Because the APIs differ, this measures idiomatic usage of each library, not identical
+instruction sequences. Read the
 [Methodology](#methodology-fairness-and-what-the-numbers-do-and-dont-say) section before
 drawing conclusions: two of the six scenarios are deliberately not apples-to-apples.
 
@@ -59,11 +62,11 @@ re-benchmarking.
 The comparison table looks like this:
 
 ```
-  freecs vs bevy vs skyecs
-  Scenario                                      freecs      bevy        skyecs      fastest  speedup
-  ----------------------------------------------------------------------------------------------------
-  Insert 10K entities, 4 components each        159.94 us   248.02 us   81.92 us    skyecs   1.95x
-  Iterate 10K entities, position += velocity    8.69 us     7.38 us     5.31 us     skyecs   1.39x
+  freecs vs bevy vs skyecs vs nightshade
+  Scenario                                      freecs      bevy        skyecs      nightshade  fastest     speedup
+  -------------------------------------------------------------------------------------------------------------------
+  Insert 10K entities, 4 components each        47.56 us    248.85 us   76.92 us    50.65 us    freecs      1.06x
+  Iterate 10K entities, position += velocity    4.87 us     7.45 us     5.68 us     5.05 us     freecs      1.04x
   ...
 ```
 
@@ -115,7 +118,7 @@ fixtures, registering systems) runs once and is excluded, with one deliberate ex
 
 - **`simple_insert`** builds a fresh `World` and fills it inside `run()`, because creating
   and populating a world is the thing being measured. So this scenario includes the cost of
-  `World::new()` on every iteration. That is consistent across all three libraries and
+  `World::new()` on every iteration. That is consistent across all four libraries and
   matches the upstream suite, but it means `simple_insert` is "world creation plus 10K
   inserts," not inserts in isolation.
 - Every other scenario builds the world once in `setup()` and times only the operation
@@ -125,7 +128,7 @@ fixtures, registering systems) runs once and is excluded, with one deliberate ex
 
 Each scenario does the same logical work with the same component layout, but through each
 library's idiomatic API. Where an operation has several forms (for example a deferred
-command buffer versus direct mutation), all three use the same form so they line up:
+command buffer versus direct mutation), all four use the same form so they line up:
 `add_remove` uses direct structural changes on every library, not command buffers. The
 result is a comparison of idiomatic usage, not of identical machine code.
 
@@ -135,6 +138,11 @@ The `freecs` column is `freecs::dynamic::DynWorld`: components registered at run
 queried as typed references (`query::<(&mut Position, &Velocity)>()`). freecs also ships a
 static `ecs!` macro tier over the same storage, which this suite does not measure.
 
+From freecs 5.0 a type must be marked once with `impl_component!` before it can spawn as
+part of a bundle. That is a compile-time marker whose supertraits are the component storage
+bounds it already met, so it costs nothing at runtime, but it is a visible difference from
+nightshade-ecs and sky_ecs, where a component is never declared.
+
 Two freecs settings are off by default and stay off here, because sky_ecs and bevy_ecs are
 not paying for them either: per-row change detection (`set_change_detection`) and the
 structural-change log (`structural_logging`). A world that turns them on pays two extra
@@ -142,8 +150,37 @@ structural-change log (`structural_logging`). A world that turns them on pays tw
 per entity per structural change. Turn them on and these numbers get worse; that is the
 feature working, not the storage.
 
-freecs's opt-in `raw_storage` backend is measured separately (see below), not in the table
-above.
+### Both freecs and nightshade-ecs run their contiguous storage backend
+
+freecs and nightshade-ecs each ship a `raw_storage` feature that replaces the default
+per-column `Box<dyn Any>` holding a `Vec<T>` with a contiguous byte buffer reached through
+pointer casts, which removes one downcast per column per table. In both libraries the
+public API and the observable behavior are identical across the two backends: the backend
+decides how a data column is held and nothing else, and change detection and the
+structural log are orthogonal to it and stay off here on both.
+
+Both columns run with `raw_storage` on, so they are configured the same way. bevy_ecs and
+sky_ecs have no equivalent feature to turn on, which is a real difference between the
+libraries rather than a setting this suite chose. Read `simple_insert`,
+`fragmented_iter`, and `add_remove` as "each library's fastest safe-by-default
+configuration," which for two of the four means one contiguous column per component.
+
+### nightshade-ecs is pinned to a git commit
+
+`nightshade-ecs` lives inside the [nightshade](https://github.com/matthewjberger/nightshade)
+repository, so the `nightshade` column is a git dependency pinned to one commit in
+`Cargo.toml` rather than a crates.io version. Bump the `rev` there to benchmark against a
+newer commit.
+
+Like freecs, nightshade-ecs keeps per-row change detection and the structural-change log
+off by default, and this suite leaves both off.
+
+The `nightshade` column also has the `parallel` feature on, which lets the scheduler batch
+systems that cannot observe each other. It has no effect on the `schedule` row as that
+scenario is written, because `Schedule::push` reports `SystemAccess::exclusive`, so each of
+the three closures is a batch of its own. Registering the systems through
+`ScheduleExt::add_system` with typed `Query` parameters would derive the real access and
+let `ab` and `cd` share a batch.
 
 ### Two scenarios are not apples-to-apples
 
@@ -156,16 +193,19 @@ above.
   machinery, not thread coordination. sky_ecs runs its own staged tick, which compiles the
   three systems into conflict-free waves once and then dispatches them; its `cd` and `ce`
   systems both write `C`, so they land in different waves and it runs this row serially
-  rather than across threads. Read this row as
+  rather than across threads. nightshade-ecs has its `parallel` feature on, but this
+  scenario registers the three closures with `Schedule::push`, which reports exclusive
+  access, so each closure is a batch of its own and the row runs serially. Read this row as
   "the cost of dispatching three trivial systems the way each library does it out of the
   box," not as a controlled measurement of dispatch cost. A library that does more per run
   (safety checks, deferred edits) looks slower here even though that machinery pays off in a
   real frame with many heavy, interacting systems.
 - **`heavy_compute`** is dominated by the matrix math (100 inversions per entity through
-  cgmath), not by ECS storage, which is why the three land within a few percent of each
-  other. It also runs three different parallel backends (freecs on rayon, bevy on its task
-  pool, sky on its own pool), each with its own warmup and chunking. Read it as "do all
-  three parallelize a compute-heavy loop without falling over," not as a storage benchmark.
+  cgmath), not by ECS storage, which is why the four land within a few percent of each
+  other. It also runs three different parallel backends (freecs and nightshade-ecs on rayon,
+  bevy on its task pool, sky on its own pool), each with its own warmup and chunking. Read it
+  as "do all four parallelize a compute-heavy loop without falling over," not as a storage
+  benchmark.
 
 The four scenarios that *are* clean like-for-like comparisons are `simple_insert`,
 `simple_iter`, `fragmented_iter`, and `add_remove`.
@@ -206,8 +246,8 @@ module carries a scoped `#![allow(dead_code)]` for exactly this reason.
 
 The release profile in `Cargo.toml` uses thin LTO and a single codegen unit, so every
 library is measured with the kind of optimization a shipping build would actually use. The
-compared versions are pinned in `Cargo.toml`; bump them there to benchmark against newer
-releases.
+compared versions, and the feature set each library runs with, are pinned in `Cargo.toml`;
+bump them there to benchmark against newer releases.
 
 ## License
 

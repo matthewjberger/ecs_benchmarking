@@ -1,9 +1,10 @@
-// Focused experiment: does freecs's dynamic tier fall behind on a single large
-// archetype because its parallel iteration is table-granular (one archetype
-// runs on one core), while bevy and sky_ecs chunk-parallelize within an
-// archetype? One archetype, one million entities, a compute-bound per-entity
-// kernel. All three start from identical state, so the printed checksums must
-// match, which cross-validates that they perform the same work.
+// Focused experiment: do freecs's dynamic tier and nightshade-ecs fall behind
+// on a single large archetype because their parallel iteration is
+// table-granular (one archetype runs on one core), while bevy and sky_ecs
+// chunk-parallelize within an archetype? One archetype, one million entities, a
+// compute-bound per-entity kernel. All four start from identical state, so the
+// printed checksums must match, which cross-validates that they perform the
+// same work.
 //
 // Run with: cargo bench --bench experiment_parallel (or `just experiment-parallel`)
 
@@ -43,11 +44,79 @@ mod freecs_dyn_mod {
         z: f32,
     }
 
+    freecs::impl_component!(Position, Velocity);
+
     pub struct Bench(DynWorld);
 
     impl Bench {
         pub fn build() -> Self {
             let mut world = DynWorld::new();
+            world.spawn_bundles(
+                (
+                    Position {
+                        x: 0.1,
+                        y: 0.5,
+                        z: 1.0,
+                    },
+                    Velocity {
+                        x: 0.001,
+                        y: 0.002,
+                        z: 0.003,
+                    },
+                ),
+                ENTITIES,
+            );
+            Self(world)
+        }
+
+        pub fn run(&mut self) {
+            self.0.query::<(&mut Position, &Velocity)>().par_for_each(
+                |_entity, (position, velocity)| {
+                    kernel(
+                        &mut position.x,
+                        &mut position.y,
+                        &mut position.z,
+                        velocity.x,
+                        velocity.y,
+                        velocity.z,
+                    );
+                },
+            );
+        }
+
+        pub fn checksum(&mut self) -> f64 {
+            let mut sum = 0.0f64;
+            self.0
+                .query::<&Position>()
+                .for_each(|_entity, position| sum += position.x as f64);
+            sum
+        }
+    }
+}
+
+mod nightshade_mod {
+    use super::*;
+    use nightshade_ecs::World;
+
+    #[derive(Clone, Copy, Default)]
+    struct Position {
+        x: f32,
+        y: f32,
+        z: f32,
+    }
+
+    #[derive(Clone, Copy, Default)]
+    struct Velocity {
+        x: f32,
+        y: f32,
+        z: f32,
+    }
+
+    pub struct Bench(World);
+
+    impl Bench {
+        pub fn build() -> Self {
+            let mut world = World::new();
             world.spawn_bundles(
                 (
                     Position {
@@ -239,6 +308,16 @@ fn experiment(criterion: &mut Criterion) {
         let mut bench = freecs_dyn_mod::Bench::build();
         bench.run();
         eprintln!("  verify freecs_dyn checksum: {:.4}", bench.checksum());
+        bencher.iter(|| {
+            bench.run();
+            black_box(&mut bench);
+        });
+    });
+
+    group.bench_function("nightshade", |bencher| {
+        let mut bench = nightshade_mod::Bench::build();
+        bench.run();
+        eprintln!("  verify nightshade checksum: {:.4}", bench.checksum());
         bencher.iter(|| {
             bench.run();
             black_box(&mut bench);
