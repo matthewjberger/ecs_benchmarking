@@ -33,7 +33,7 @@ impl Benchmark {
     pub fn run(&mut self) {
         self.0
             .query_mut::<(&Velocity, &mut Position)>()
-            .for_each(|(velocity, position)| {
+            .for_each(|velocity, position| {
                 position.0 += velocity.0;
             });
     }

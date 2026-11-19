@@ -14,7 +14,7 @@ struct Velocity(Vector3<f32>);
 struct Matrix(Matrix4<f32>);
 
 fn compute(bodies: ParView<(&mut Position, &mut Matrix)>) {
-    bodies.par_for_each(|(position, matrix)| {
+    bodies.par_for_each(|position, matrix| {
         for _ in 0..100 {
             matrix.0 = matrix.0.invert().unwrap();
         }

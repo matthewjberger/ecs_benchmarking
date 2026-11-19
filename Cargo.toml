@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "ecs_benchmarking"
 version = "0.1.0"
 edition = "2024"
@@ -7,26 +7,23 @@ description = "Head-to-head Criterion benchmarks comparing freecs against bevy_e
 repository = "https://github.com/matthewjberger/ecs_benchmarking"
 publish = false
 
-# freecs and nightshade-ecs both offer a contiguous-byte column backend behind
-# an identical public API, and both run with it on so the two columns are
-# configured the same way. Neither backend changes observable behavior: change
-# detection and the structural-change log are orthogonal to it and stay off on
-# both. bevy_ecs and sky_ecs have no equivalent to turn on.
+# freecs offers a contiguous-byte column backend behind an identical public
+# API, and it runs with that backend on. The backend does not change observable
+# behavior: change detection and the structural-change log are orthogonal to it
+# and stay off. bevy_ecs and sky_ecs have no equivalent to turn on. hemlock-ecs
+# has raw columns in its default features, and they stay on here.
 [dependencies]
 freecs = { version = "5.1", features = ["dynamic", "raw_storage"] }
-nightshade-ecs = { git = "https://github.com/matthewjberger/nightshade", rev = "5a9e1a7c38322d09922da243251f11f1d3971203", features = [
-    "raw_storage",
-    "parallel",
-] }
-bevy_ecs = "0.19"
-bevy_tasks = "0.19"
-sky_ecs = "0.1"
+hemlock-ecs = { git = "https://github.com/matthewjberger/hemlock", rev = "e4574a6710a7af37c264f95db688e0b468e0fdb0" }
+bevy_ecs = "0.20"
+bevy_tasks = "0.20"
+sky_ecs = "0.3"
 cgmath = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [dev-dependencies]
-criterion = { version = "0.7", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "benchmarks"
@@ -43,8 +40,3 @@ path = "src/bin/report.rs"
 [profile.bench]
 lto = "thin"
 codegen-units = 1
-
-
-[patch."https://github.com/matthewjberger/nightshade"]
-nightshade-ecs = { path = "../nightshade/crates/nightshade-ecs" }
-

@@ -21,11 +21,19 @@ const SCENARIOS: &[(&str, &str)] = &[
         "wide_iter",
         "Iterate 8 components over 8M entities (256 MB working set)",
     ),
+    (
+        "changed_iter",
+        "Move 1K of 10K entities, then collect the changed ones",
+    ),
+    (
+        "deferred_edits",
+        "Queue and apply 4K deferred edits (spawn, set, remove, despawn)",
+    ),
 ];
 
 // Columns are laid out in this order when present; any other discovered
 // library is appended alphabetically. Adding a library needs no change here.
-const PREFERRED_ORDER: &[&str] = &["freecs", "bevy", "skyecs", "nightshade"];
+const PREFERRED_ORDER: &[&str] = &["freecs", "bevy", "skyecs", "hemlock"];
 
 #[derive(Deserialize)]
 struct Estimate {
@@ -51,6 +59,9 @@ impl Row {
     }
 
     fn fastest(&self) -> Option<&String> {
+        if self.values.len() < 2 {
+            return None;
+        }
         self.values
             .iter()
             .min_by(|left, right| left.1.total_cmp(right.1))

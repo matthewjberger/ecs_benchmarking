@@ -1,7 +1,7 @@
-// Focused experiment: do freecs's dynamic tier and nightshade-ecs fall behind
-// on a single large archetype because their parallel iteration is
-// table-granular (one archetype runs on one core), while bevy and sky_ecs
-// chunk-parallelize within an archetype? One archetype, one million entities, a
+// Focused experiment: does freecs's dynamic tier fall behind on a single large
+// archetype because its parallel iteration is table-granular (one archetype
+// runs on one core), while bevy, sky_ecs and hemlock-ecs split the rows of an
+// archetype between threads? One archetype, one million entities, a
 // compute-bound per-entity kernel. All four start from identical state, so the
 // printed checksums must match, which cross-validates that they perform the
 // same work.
@@ -94,68 +94,74 @@ mod freecs_dyn_mod {
     }
 }
 
-mod nightshade_mod {
+mod hemlock_mod {
     use super::*;
-    use nightshade_ecs::World;
+    use hemlock_ecs::resources::Resources;
+    use hemlock_ecs::schedule::once;
+    use hemlock_ecs::storage::{Storage, query, spawn_batch};
+    use hemlock_ecs::system::{IntoSystem, Mut, System, each_mut_parallel};
 
-    #[derive(Clone, Copy, Default)]
+    #[derive(Clone, Copy)]
     struct Position {
         x: f32,
         y: f32,
         z: f32,
     }
 
-    #[derive(Clone, Copy, Default)]
+    #[derive(Clone, Copy)]
     struct Velocity {
         x: f32,
         y: f32,
         z: f32,
     }
 
-    pub struct Bench(World);
+    fn compute(mut bodies: Mut<(Position,), (&Velocity,)>) {
+        each_mut_parallel(&mut bodies, |_entity, (mut position,), (velocity,)| {
+            let position = &mut *position;
+            kernel(
+                &mut position.x,
+                &mut position.y,
+                &mut position.z,
+                velocity.x,
+                velocity.y,
+                velocity.z,
+            );
+        });
+    }
+
+    pub struct Bench(Storage, Resources, System);
 
     impl Bench {
         pub fn build() -> Self {
-            let mut world = World::new();
-            world.spawn_bundles(
-                (
-                    Position {
-                        x: 0.1,
-                        y: 0.5,
-                        z: 1.0,
-                    },
-                    Velocity {
-                        x: 0.001,
-                        y: 0.002,
-                        z: 0.003,
-                    },
-                ),
-                ENTITIES,
+            let mut storage = Storage::default();
+            spawn_batch(
+                &mut storage,
+                (0..ENTITIES).map(|_| {
+                    (
+                        Position {
+                            x: 0.1,
+                            y: 0.5,
+                            z: 1.0,
+                        },
+                        Velocity {
+                            x: 0.001,
+                            y: 0.002,
+                            z: 0.003,
+                        },
+                    )
+                }),
             );
-            Self(world)
+            Self(storage, Resources::default(), compute.into_system())
         }
 
         pub fn run(&mut self) {
-            self.0.query::<(&mut Position, &Velocity)>().par_for_each(
-                |_entity, (position, velocity)| {
-                    kernel(
-                        &mut position.x,
-                        &mut position.y,
-                        &mut position.z,
-                        velocity.x,
-                        velocity.y,
-                        velocity.z,
-                    );
-                },
-            );
+            once(&mut self.2, &mut self.0, &mut self.1);
         }
 
-        pub fn checksum(&mut self) -> f64 {
-            let mut sum = 0.0f64;
-            self.0
-                .query::<&Position>()
-                .for_each(|_entity, position| sum += position.x as f64);
-            sum
+        pub fn checksum(&self) -> f64 {
+            query::<&Position>(&self.0)
+                .map(|(_entity, position)| position.x as f64)
+                .sum()
         }
     }
 }
@@ -249,7 +255,7 @@ mod sky_mod {
     }
 
     fn compute(bodies: ParView<(&mut Position, &Velocity)>) {
-        bodies.par_for_each(|(position, velocity)| {
+        bodies.par_for_each(|position, velocity| {
             kernel(
                 &mut position.x,
                 &mut position.y,
@@ -314,10 +320,10 @@ fn experiment(criterion: &mut Criterion) {
         });
     });
 
-    group.bench_function("nightshade", |bencher| {
-        let mut bench = nightshade_mod::Bench::build();
+    group.bench_function("hemlock", |bencher| {
+        let mut bench = hemlock_mod::Bench::build();
         bench.run();
-        eprintln!("  verify nightshade checksum: {:.4}", bench.checksum());
+        eprintln!("  verify hemlock checksum:    {:.4}", bench.checksum());
         bencher.iter(|| {
             bench.run();
             black_box(&mut bench);

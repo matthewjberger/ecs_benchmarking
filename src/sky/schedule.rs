@@ -16,15 +16,15 @@ struct D(f32);
 struct E(f32);
 
 fn ab(entities: View<(&mut A, &mut B)>) {
-    entities.for_each(|(a, b)| std::mem::swap(&mut a.0, &mut b.0));
+    entities.for_each(|a, b| std::mem::swap(&mut a.0, &mut b.0));
 }
 
 fn cd(entities: View<(&mut C, &mut D)>) {
-    entities.for_each(|(c, d)| std::mem::swap(&mut c.0, &mut d.0));
+    entities.for_each(|c, d| std::mem::swap(&mut c.0, &mut d.0));
 }
 
 fn ce(entities: View<(&mut C, &mut E)>) {
-    entities.for_each(|(c, e)| std::mem::swap(&mut c.0, &mut e.0));
+    entities.for_each(|c, e| std::mem::swap(&mut c.0, &mut e.0));
 }
 
 pub struct Benchmark(World);

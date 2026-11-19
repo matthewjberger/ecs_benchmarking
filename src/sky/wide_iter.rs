@@ -37,7 +37,7 @@ impl Benchmark {
     pub fn run(&mut self) {
         self.0
             .query_mut::<(&mut C0, &C1, &C2, &C3, &C4, &C5, &C6, &C7)>()
-            .for_each(|(c0, c1, c2, c3, c4, c5, c6, c7)| {
+            .for_each(|c0, c1, c2, c3, c4, c5, c6, c7| {
                 c0.0 += c1.0 + c2.0 + c3.0 + c4.0 + c5.0 + c6.0 + c7.0;
             });
     }
