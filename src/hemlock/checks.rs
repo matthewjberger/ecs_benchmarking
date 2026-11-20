@@ -4,8 +4,8 @@ use hemlock_ecs::order::batch;
 use hemlock_ecs::resources::Resources;
 use hemlock_ecs::schedule::{once, run};
 use hemlock_ecs::storage::{
-    Storage, attach, changed_at, changed_since, despawn, get, get_mut, has, is_alive, living,
-    query, remove, removed_since, require, set, spawn_batch, spawn_with, tick,
+    Storage, attach, changed_at, changed_since, despawn, each_changed, get, get_mut, has, is_alive,
+    living, query, remove, removed_since, require, set, spawn_batch, spawn_with, tick,
 };
 use hemlock_ecs::system::{
     IntoSystem, Mut, System, View, each, each_mut, each_mut_parallel, each_mut_split, peek_mut,
@@ -417,6 +417,54 @@ fn reading_through_a_tracked_value_marks_no_change() {
     assert!(changed_since::<Count>(&storage, after).is_empty());
 }
 
+fn visited_since(storage: &Storage, since: u64) -> Vec<(Entity, u64)> {
+    let mut visited = Vec::new();
+    each_changed::<Count>(storage, since, |entity, count| {
+        visited.push((entity, count.0));
+    });
+    visited.sort_unstable();
+    visited
+}
+
+#[test]
+fn each_changed_visits_the_rows_that_changed_since_lists() {
+    let mut storage = Storage::default();
+    let plain: Vec<Entity> = (0..40)
+        .map(|value| spawn_with(&mut storage, (Count(value),)))
+        .collect();
+    let stepped: Vec<Entity> = (0..40)
+        .map(|value| spawn_with(&mut storage, (Count(value), Step(1))))
+        .collect();
+    assert_eq!(visited_since(&storage, 0).len(), 80);
+    let mut systems = vec![bump.into_system()];
+    let mut batches = batch(&mut systems, &[]);
+    run_batches(&mut batches, &mut storage);
+    let after_bump = tick(&storage) - 1;
+    assert!(visited_since(&storage, after_bump).is_empty());
+
+    let touched = [plain[3], plain[17], stepped[0], stepped[39]];
+    for entity in touched {
+        if let Some(mut count) = get_mut::<Count>(&mut storage, entity) {
+            count.0 += 1000;
+        }
+    }
+    set(&mut storage, plain[20], Step(5));
+    despawn(&mut storage, plain[4]);
+
+    let visited = visited_since(&storage, after_bump);
+    let mut listed = changed_since::<Count>(&storage, after_bump);
+    listed.sort_unstable();
+    let entities: Vec<Entity> = visited.iter().map(|(entity, _)| *entity).collect();
+    assert_eq!(entities, listed);
+    let mut expected = touched.to_vec();
+    expected.sort_unstable();
+    assert_eq!(entities, expected);
+    for (entity, value) in visited {
+        assert_eq!(get::<Count>(&storage, entity), Some(&Count(value)));
+        assert!(value >= 1000);
+    }
+    assert_eq!(visited_since(&storage, 0).len(), 79);
+}
 fn peek_the_first(mut rows: Mut<(Count,)>, targets: View<&Owner>) {
     let wanted: Vec<Entity> = each(&targets).map(|(entity, _)| entity).collect();
     for entity in wanted {

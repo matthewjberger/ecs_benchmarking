@@ -14,7 +14,7 @@ publish = false
 # has raw columns in its default features, and they stay on here.
 [dependencies]
 freecs = { version = "5.1", features = ["dynamic", "raw_storage"] }
-hemlock-ecs = { git = "https://github.com/matthewjberger/hemlock", rev = "e4574a6710a7af37c264f95db688e0b468e0fdb0" }
+hemlock-ecs = { git = "https://github.com/matthewjberger/hemlock", rev = "7e299ca632fb3e5c9d8ba1fa99cf3b879bc28256" }
 bevy_ecs = "0.20"
 bevy_tasks = "0.20"
 sky_ecs = "0.3"

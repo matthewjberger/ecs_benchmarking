@@ -717,7 +717,7 @@ dependencies = [
 [[package]]
 name = "hemlock-ecs"
 version = "0.1.0"
-source = "git+https://github.com/matthewjberger/hemlock?rev=e4574a6710a7af37c264f95db688e0b468e0fdb0#e4574a6710a7af37c264f95db688e0b468e0fdb0"
+source = "git+https://github.com/matthewjberger/hemlock?rev=7e299ca632fb3e5c9d8ba1fa99cf3b879bc28256#7e299ca632fb3e5c9d8ba1fa99cf3b879bc28256"
 dependencies = [
  "rayon",
 ]
