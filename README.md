@@ -194,11 +194,13 @@ Seven properties of hemlock-ecs at this commit affect how its column reads:
   `changed_since`. None of the seven shared scenarios reads row changes, so there the
   `hemlock` column runs without row ticks, as the `freecs` column does with its change detection off. A game that reads
   the changes of a component pays one more `u64` write per row for that component.
-  The hemlock-only `changed_iter` scenario measures that path. `changed_since` reads the
-  row ticks in groups of four, with one test for each group that has no branch. A scan with
-  one branch for each row measured 7.0 us or 9.4 us for the same source, and the level
-  depended on where the linker put the loop. The scan by groups measured 7.0 us in both
-  builds.
+  The hemlock-only `changed_iter` scenario measures that path. `changed_since` builds a
+  mask for 64 row ticks in eight independent parts, with no branch, and then walks the set
+  bits. Two earlier scans had a branch for each row or for each group of four rows. Each
+  measured 7.1 us or 9.4 us for the same source, and the level depended on where the linker
+  put the loop: a commit that added an unused function moved the pinned build from one level
+  to the other. The scan by masks measured 7.3 us in a path build and 7.3 us to 7.6 us in a
+  pinned build.
 - **Mutable iteration has two forms.** `storage::each_mut` takes the storage exclusively
   and runs with no system, like the direct queries of freecs and sky_ecs. `simple_iter`,
   `fragmented_iter` and `wide_iter` use it. With `raw-columns` on it keeps the column
